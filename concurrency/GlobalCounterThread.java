@@ -1,25 +1,37 @@
 import java.util.Scanner;
 
 public class GlobalCounterThread extends Thread{
-    private static int counter = 0;
-    private static int limit;
-    private static final Object lock = new Object();
+    private static int globalCounter = 0;
+    private static boolean finished = false;
+    private int limit;
+    private int localCounter;
 
     public GlobalCounterThread(int limit){
-        GlobalCounterThread.limit = limit;
+        this.limit = limit;
+        this.localCounter = 0;
     }
 
     @Override
     public void run(){
-        while(true){
-            synchronized (lock){
-                if (counter >= limit){
-                    break;
+        try {
+            while (localCounter < limit && !finished) {
+                synchronized (GlobalCounterThread.class) {
+                    if (finished) {
+                        break;
+                    }
+                    globalCounter++;
+                    localCounter++;
                 }
-
-                counter++;
-                System.out.println(Thread.currentThread().getName() + ": " + counter);
+                System.out.print(Thread.currentThread().getName() + ": " + localCounter);
+                Thread.sleep(1);
             }
+        } catch (InterruptedException e){
+            e.printStackTrace();
+        }
+
+        if (!finished){
+            finished = true;
+            System.out.println(Thread.currentThread().getName() + " finished first with " + localCounter + " iterations. ");
         }
     }
 
@@ -46,5 +58,7 @@ public class GlobalCounterThread extends Thread{
                 e.printStackTrace();
             }
         }
+
+        System.out.println("Global counter value: " + globalCounter);
     }
 }
