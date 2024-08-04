@@ -1,95 +1,158 @@
-import java.util.Random;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
-class ArvoreBusca {
-    private class Node{
-        int value;
+public class ArvoreBusca {
+    private static class Node {
+        int key;
         Node left, right;
+        ReentrantLock lock = new ReentrantLock();
 
-        Node(int value){
-            this.value = value;
+        Node(int item) {
+            key = item;
             left = right = null;
         }
     }
 
     private Node root;
-    private final ReentrantLock lock = new ReentrantLock();
 
-    public ArvoreBusca(){
+    public ArvoreBusca() {
         root = null;
     }
 
-    public void insert (int value){
-        try{
-            root = insertRec(root, value);
+    public void add(int key) {
+        if (root == null) {
+            synchronized (this) {
+                if (root == null) {
+                    root = new Node(key);
+                    return;
+                }
+            }
+        }
+        addRecursive(root, key);
+    }
+
+    private void addRecursive(Node current, int key) {
+        current.lock.lock();
+        try {
+            if (key < current.key) {
+                if (current.left == null) {
+                    current.left = new Node(key);
+                } else {
+                    addRecursive(current.left, key);
+                }
+            } else if (key > current.key) {
+                if (current.right == null) {
+                    current.right = new Node(key);
+                } else {
+                    addRecursive(current.right, key);
+                }
+            }
         } finally {
-            lock.unlock();
-        }
-    }
-    private Node insertRec(Node root, int value){
-        if (root == null){
-            root = new Node(value);
-            return root;
-        }
-
-        if (value < root.value){
-            insertRec(root.left, value);
-        } else if (value >= root.value){
-            insertRec(root.right, value);
-        }
-        return root;
-    }
-
-    public int countNodes (){
-        return countRec(root);
-    }
-
-    private int countRec (Node root){
-        if (root == null){
-            return 0;
-        } else{
-            return 1 + countRec(root.right) + countRec(root.left);
+            current.lock.unlock();
         }
     }
 
+    public boolean contains(int key) {
+        return containsRecursive(root, key);
+    }
 
-    public static void main (String[] args){
-        final ArvoreBusca tree = new ArvoreBusca();
-        int numThreads = 50;
-        int insertsPerThread = 2000;
-        Thread[] threads = new Thread[numThreads];
-        Random rand = new Random();
+    private boolean containsRecursive(Node current, int key) {
+        if (current == null) {
+            return false;
+        }
 
-        long startTime = System.currentTimeMillis();
+        current.lock.lock();
+        try {
+            if (key == current.key) {
+                return true;
+            } else if (key < current.key) {
+                return containsRecursive(current.left, key);
+            } else {
+                return containsRecursive(current.right, key);
+            }
+        } finally {
+            current.lock.unlock();
+        }
+    }
 
-        for (int i = 0; i < numThreads; i++){
-            threads[i] = new Thread(() -> {
-                for (int j = 0; j < insertsPerThread; j++){
-                    int num = rand.nextInt(10000);
-                    tree.insert(num);
+    public void remove(int key) {
+        root = removeRecursive(root, key);
+    }
+
+    private Node removeRecursive(Node current, int key) {
+        if (current == null) {
+            return null;
+        }
+
+        current.lock.lock();
+        try {
+            if (key == current.key) {
+                if (current.left == null && current.right == null) {
+                    return null;
+                } else if (current.left == null) {
+                    return current.right;
+                } else if (current.right == null) {
+                    return current.left;
+                } else {
+                    int smallestValue = findSmallestValue(current.right);
+                    current.key = smallestValue;
+                    current.right = removeRecursive(current.right, smallestValue);
+                    return current;
+                }
+            } else if (key < current.key) {
+                current.left = removeRecursive(current.left, key);
+                return current;
+            } else {
+                current.right = removeRecursive(current.right, key);
+                return current;
+            }
+        } finally {
+            current.lock.unlock();
+        }
+    }
+
+    private int findSmallestValue(Node root) {
+        root.lock.lock();
+        try {
+            return root.left == null ? root.key : findSmallestValue(root.left);
+        } finally {
+            root.lock.unlock();
+        }
+    }
+
+    public static void main(String[] args) {
+        int numOperacoes = 100000;
+        int numThreads = 4;
+
+        ArvoreBusca arvore = new ArvoreBusca();
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+
+        long inicio = System.nanoTime();
+
+        for (int i = 0; i < numThreads; i++) {
+            executor.execute(() -> {
+                for (int j = 0; j < numOperacoes; j++) {
+                    int valor = ThreadLocalRandom.current().nextInt(100000);
+                    arvore.add(valor);
+                    arvore.contains(valor);
+                    arvore.remove(valor);
                 }
             });
-            threads[i].start();
         }
 
-        long endTime = System.currentTimeMillis();
-        long duration = endTime - startTime;
-
-        System.out.println("Total nodes in the tree " + tree.countNodes());
-        System.out.println("Time taken with multi-threading: " + duration);
-
-        startTime = System.currentTimeMillis();
-
-        final ArvoreBusca tree2 = new ArvoreBusca();
-
-        for (int i = 0; i < numThreads * insertsPerThread; i++){
-            int num = rand.nextInt(10000);
-            tree.insert(num);
+        executor.shutdown();
+        try {
+            executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
 
-        endTime = System.currentTimeMillis();
-        duration = endTime - startTime;
+        long fim = System.nanoTime();
+        long duracao = TimeUnit.NANOSECONDS.toMillis(fim - inicio);
 
-        System.out.println("Time taken sequentially: " + duration);
+        System.out.println("Tempo com travamento de nível de nó: " + duracao + " ms");
     }
 }
