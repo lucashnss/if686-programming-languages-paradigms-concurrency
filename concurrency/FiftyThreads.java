@@ -1,4 +1,4 @@
-public class fifty_threads {
+public class FiftyThreads {
     public static void main(String[] args) {
         int numThreads =  50;
         long max_Number = 2_000_000_000L;
